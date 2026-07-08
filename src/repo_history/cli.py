@@ -50,13 +50,23 @@ def plan(
     max_count: int = typer.Option(
         None, "--max-count", help="Only walk the most recent N commits."
     ),
-    as_json: bool = typer.Option(False, "--json", help="Print the full result as JSON."),
+    out: Path = typer.Option(
+        None, "--out", help="Output directory (default: <repo>/.repo-memory)."
+    ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print the result as JSON and skip writing to disk."
+    ),
 ) -> None:
-    """Walk history with the chosen analysis method and report what it found."""
+    """Walk history with the chosen analysis method and write a work manifest.
+
+    The manifest (episode bundles + condensed, secret-scrubbed diffs) is what the
+    ``/repo-history`` skill reads to run its per-episode analysis.
+    """
     import json
 
     from .analysis import get_analyzer, run_analysis
     from .git import GitError, GitRepo
+    from .work import materialize
 
     try:
         git_repo = GitRepo(repo)
@@ -70,7 +80,17 @@ def plan(
     if as_json:
         typer.echo(json.dumps(result.to_dict(), indent=2))
         return
+
     _print_summary(result)
+    out_dir = out or (repo / ".repo-memory")
+    materialized = materialize(git_repo, result, out_dir, ref=branch)
+    typer.secho(
+        f"\nwrote {materialized.episode_count} episode bundle(s) to "
+        f"{materialized.work_dir}",
+        bold=True,
+    )
+    typer.echo(f"redacted {materialized.redactions} likely secret(s)")
+    typer.echo("next: run the /repo-history skill in Claude Code, then `repo-history build`")
 
 
 def _print_summary(result) -> None:  # noqa: ANN001 (AnalysisResult, imported lazily)

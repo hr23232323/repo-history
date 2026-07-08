@@ -141,6 +141,13 @@ class GitRepo:
         out = self._run(*args)
         return [_parse_commit(record) for record in _split_records(out)]
 
+    def commit(self, sha: str) -> Commit:
+        """Fetch a single commit's metadata by sha or ref."""
+        commits = self.commits(sha, max_count=1)
+        if not commits:
+            raise GitError(f"no such commit: {sha}")
+        return commits[0]
+
     def file_changes(self, sha: str) -> list[FileChange]:
         """Files touched by a commit, with per-file line churn.
 
