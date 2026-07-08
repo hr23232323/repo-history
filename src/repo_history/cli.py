@@ -44,10 +44,58 @@ def _root(
 def plan(
     repo: Path = typer.Option(Path("."), "--repo", help="Path to the git repository."),
     branch: str = typer.Option("HEAD", "--branch", help="Branch or ref to walk."),
+    method: str = typer.Option(
+        "mechanical", "--method", "-m", help="Analysis method to run (see `methods`)."
+    ),
+    max_count: int = typer.Option(
+        None, "--max-count", help="Only walk the most recent N commits."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Print the full result as JSON."),
 ) -> None:
-    """Walk history, run mechanical analysis, and emit a work manifest of episodes."""
-    typer.echo("`plan` is not implemented yet (coming in an upcoming commit).")
-    raise typer.Exit(code=1)
+    """Walk history with the chosen analysis method and report what it found."""
+    import json
+
+    from .analysis import get_analyzer, run_analysis
+    from .git import GitError, GitRepo
+
+    try:
+        git_repo = GitRepo(repo)
+        get_analyzer(method)  # validate the method name early with a clear error
+    except (GitError, KeyError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    result = run_analysis(git_repo, branch, method=method, max_count=max_count)
+
+    if as_json:
+        typer.echo(json.dumps(result.to_dict(), indent=2))
+        return
+    _print_summary(result)
+
+
+def _print_summary(result) -> None:  # noqa: ANN001 (AnalysisResult, imported lazily)
+    typer.secho(f"method: {result.method}", bold=True)
+    for key, value in result.summary.items():
+        typer.echo(f"  {key.replace('_', ' ')}: {value}")
+    hotspots = result.sections.get("hotspots", [])[:5]
+    if hotspots:
+        typer.secho("top hotspots:", bold=True)
+        for h in hotspots:
+            typer.echo(f"  {h.commits:>3} commits  {h.path}")
+    if result.episodes:
+        typer.secho(f"episodes ({len(result.episodes)}):", bold=True)
+        for ep in result.episodes[:10]:
+            typer.echo(f"  [{ep.kind}] {ep.id}  {ep.title}")
+
+
+@app.command()
+def methods() -> None:
+    """List the available analysis methods."""
+    from .analysis import available
+
+    for key, title, description in available():
+        typer.secho(f"{key}", bold=True, nl=False)
+        typer.echo(f"  {title} — {description}")
 
 
 @app.command()
