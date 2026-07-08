@@ -121,10 +121,27 @@ def methods() -> None:
 @app.command()
 def build(
     repo: Path = typer.Option(Path("."), "--repo", help="Path to the git repository."),
+    out: Path = typer.Option(
+        None, "--out", help="Output directory (default: <repo>/.repo-memory)."
+    ),
 ) -> None:
     """Render .repo-memory/ artifacts from completed per-episode analyses."""
-    typer.echo("`build` is not implemented yet (coming in an upcoming commit).")
-    raise typer.Exit(code=1)
+    from .build import BuildError, build_artifacts
+
+    out_dir = out or (repo / ".repo-memory")
+    try:
+        result = build_artifacts(out_dir)
+    except BuildError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    typer.secho(f"wrote {len(result.files)} artifact(s) to {out_dir}", bold=True)
+    typer.echo(
+        f"  {result.episodes} episodes · {result.decisions} decisions · "
+        f"{result.landmines} landmines"
+    )
+    if result.episodes == 0:
+        typer.echo("  (no episode analyses found — run the /repo-history skill first)")
 
 
 @app.command()
