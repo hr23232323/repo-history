@@ -16,6 +16,11 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
+# Claude Code session-local settings and locally-installed skill (single source
+# of truth lives in src/repo_history/skill/)
+.claude/settings.local.json
+.claude/skills/
+
 # OS
 .DS_Store
 

@@ -1,0 +1,111 @@
+---
+name: repo-history
+description: >-
+  Distill a git repo's full history into durable engineering memory under
+  .repo-memory/ (timeline, decisions, landmines, architecture). Use when the user
+  wants historical/"why is this like this" context for a codebase, to onboard an
+  agent onto a repo's past, or asks to run repo-history / analyze git history.
+---
+
+# repo-history: git archaeology for coding agents
+
+You orchestrate the LLM half of `repo-history`. The `repo-history` CLI does the
+deterministic work (walking history, selecting episodes, condensing diffs); you
+do the reasoning (summarizing episodes, inferring decisions, spotting landmines),
+using this Claude Code session — no API key required.
+
+## Prerequisites
+
+The CLI must be available. Check with `repo-history --version` (or `uvx
+repo-history --version`). If missing, tell the user to `uv tool install
+repo-history`. Confirm the target is a git repo.
+
+## Pipeline
+
+### 1. Plan (deterministic)
+
+Pick a method (`repo-history methods` lists them; default `mechanical`), then:
+
+```
+repo-history plan --repo <repo> --branch <branch> --method <method>
+```
+
+This writes `<repo>/.repo-memory/.work/`:
+- `manifest.json` — ordered episode index (id, title, kind, commit_shas, bundle path)
+- `episodes/<id>.md` — a self-contained bundle per episode (commit messages +
+  condensed, secret-scrubbed diffs)
+- `analysis.json` — mechanical findings (hotspots, coupling, reverts)
+
+Read `manifest.json` to get the episode list.
+
+### 2. Map — analyze each episode (fan out subagents)
+
+For each episode, produce one `EpisodeAnalysis` JSON. **Fan out subagents** so
+episodes are analyzed in parallel; for a large repo, batch several small
+episodes per subagent to keep the count reasonable (aim for ≤ ~20 subagents).
+
+Each subagent must:
+1. Read `<repo>/.repo-memory/.work/episodes/<id>.md`.
+2. Write `<repo>/.repo-memory/.work/analyses/<id>.json` matching this schema:
+
+```json
+{
+  "id": "ep-0001",
+  "title": "short human title",
+  "summary": "1-3 sentences: what changed and why, for a timeline",
+  "kind": "change | revert | release",
+  "architecture_note": "how structure changed, or null",
+  "decisions": [
+    {"statement": "the decision", "why": "the reason history reveals",
+     "evidence": ["<commit-sha-or-episode-id>"]}
+  ],
+  "landmines": [
+    {"lesson": "do-not-repeat guidance", "detail": "what happened and why it failed",
+     "evidence": ["<commit-sha-or-episode-id>"]}
+  ]
+}
+```
+
+Rules for the analysis:
+- Ground every claim in the diff/message you were given. Do **not** invent
+  rationale the evidence doesn't support; if the "why" is unknown, say so briefly
+  or leave `why` empty.
+- `revert` episodes almost always yield a landmine — capture what was undone.
+- Reversed/removed abstractions, abandoned approaches, and guards-against-bugs are
+  the highest-value landmines. Prefer a few sharp entries over many vague ones.
+- `decisions` and `landmines` may be empty arrays.
+
+### 3. Reduce — synthesize the whole (optional but recommended)
+
+Read every `analyses/<id>.json`, then write
+`<repo>/.repo-memory/.work/synthesis.json`:
+
+```json
+{
+  "architecture_overview": "how the system is structured today and how it got here",
+  "narrative": "the short story of the repo's evolution"
+}
+```
+
+### 4. Build (deterministic)
+
+```
+repo-history build --repo <repo>
+```
+
+This renders `<repo>/.repo-memory/`: `TIMELINE.md`, `DECISIONS.md`,
+`LANDMINES.md`, `ARCHITECTURE.md`, `HOTSPOTS.md`, JSON mirrors, and `index.json`.
+
+### 5. Report
+
+Tell the user what was produced (counts of episodes/decisions/landmines) and
+point them at `.repo-memory/`. Suggest committing it so the whole team — and
+future agent sessions — inherit the context.
+
+## Notes
+
+- Incremental: on a repo already analyzed, pass `--since <last-head-sha>` to
+  `plan` (see `.repo-memory/index.json` for the last head) to only process new
+  commits.
+- The `.work/` directory is intermediate scaffolding and is git-ignored; the
+  rendered `.repo-memory/*.md` and `*.json` are the durable output.

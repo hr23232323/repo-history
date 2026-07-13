@@ -108,6 +108,23 @@ def _print_summary(result) -> None:  # noqa: ANN001 (AnalysisResult, imported la
             typer.echo(f"  [{ep.kind}] {ep.id}  {ep.title}")
 
 
+@app.command(name="install-skill")
+def install_skill(
+    to_global: bool = typer.Option(
+        False, "--global", help="Install to ~/.claude instead of ./.claude."
+    ),
+) -> None:
+    """Install the /repo-history Claude Code skill into a project or your home dir."""
+    from pathlib import Path as _Path
+
+    from .skillfile import install_skill as _install
+
+    base = _Path.home() if to_global else _Path(".")
+    dest = _install(base)
+    typer.secho(f"installed skill to {dest}", bold=True)
+    typer.echo("invoke it in Claude Code with: /repo-history")
+
+
 @app.command()
 def methods() -> None:
     """List the available analysis methods."""
