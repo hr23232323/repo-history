@@ -7,9 +7,16 @@ in this module writes to the repository.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+# A ref beginning with "-" would be parsed by git as an option (e.g.
+# `--output=/path`, an arbitrary-file-write). We both reject such refs and pass
+# `--end-of-options` before every positional ref as defense in depth. Whitespace
+# and control characters are never valid in a ref either.
+_UNSAFE_REF = re.compile(r"^-|[\x00-\x1f\x7f]|\s")
 
 # Field and record separators for `git log --format`. These bytes effectively
 # never appear in commit metadata, so parsing stays unambiguous even when commit
@@ -23,6 +30,13 @@ _LOG_FORMAT = _FIELD_SEP.join(
 
 class GitError(RuntimeError):
     """Raised when a git command fails or a path is not a git repository."""
+
+
+def _check_ref(ref: str) -> str:
+    """Reject refs that could be parsed as git options or aren't valid refs."""
+    if not ref or _UNSAFE_REF.search(ref):
+        raise GitError(f"unsafe or invalid git ref: {ref!r}")
+    return ref
 
 
 @dataclass(frozen=True)
@@ -113,7 +127,10 @@ class GitRepo:
 
     def resolve(self, ref: str) -> str:
         """Resolve a ref (branch, tag, short sha, HEAD) to a full commit sha."""
-        return self._run("rev-parse", "--verify", f"{ref}^{{commit}}").strip()
+        _check_ref(ref)
+        return self._run(
+            "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"
+        ).strip()
 
     # -- history walk ------------------------------------------------------
 
@@ -131,13 +148,16 @@ class GitRepo:
         ``since..ref`` range, which is how incremental runs pick up only new
         commits. ``first_parent`` follows only the mainline through merges.
         """
+        _check_ref(ref)
+        if since is not None:
+            _check_ref(since)
         rangespec = f"{since}..{ref}" if since else ref
         args = ["log", f"--format={_LOG_FORMAT}", "--reverse"]
         if max_count is not None:
             args += ["--max-count", str(max_count)]
         if first_parent:
             args.append("--first-parent")
-        args.append(rangespec)
+        args += ["--end-of-options", rangespec]
         out = self._run(*args)
         return [_parse_commit(record) for record in _split_records(out)]
 
@@ -154,8 +174,10 @@ class GitRepo:
         Uses ``--numstat`` against the first parent so merge commits report the
         net change rather than the union of both sides.
         """
+        _check_ref(sha)
         out = self._run(
-            "show", "--numstat", "--format=", "-M", "--first-parent", sha
+            "show", "--numstat", "--format=", "-M", "--first-parent",
+            "--end-of-options", sha,
         )
         changes: list[FileChange] = []
         for line in out.splitlines():
@@ -179,8 +201,10 @@ class GitRepo:
 
     def raw_diff(self, sha: str) -> str:
         """The full unified diff a commit introduced (vs its first parent)."""
+        _check_ref(sha)
         return self._run(
-            "show", "--format=", "--first-parent", "--no-color", sha
+            "show", "--format=", "--first-parent", "--no-color",
+            "--end-of-options", sha,
         )
 
     def tags(self) -> list[Tag]:
@@ -196,8 +220,16 @@ class GitRepo:
                 continue
             name, _obj = line.split(_FIELD_SEP, 1)
             # ^{commit} dereferences annotated tags to the commit they wrap.
-            sha = self.resolve(name)
-            ts = int(self._run("show", "-s", "--format=%at", sha).strip())
+            # A repo could ship a pathologically-named tag; skip rather than abort.
+            try:
+                sha = self.resolve(name)
+            except GitError:
+                continue
+            ts = int(
+                self._run(
+                    "show", "-s", "--format=%at", "--end-of-options", sha
+                ).strip()
+            )
             tags.append(Tag(name=name, sha=sha, timestamp=ts))
         return sorted(tags, key=lambda t: t.timestamp)
 

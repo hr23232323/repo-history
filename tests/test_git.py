@@ -82,6 +82,28 @@ def test_tags_resolves_annotated(fixture_repo: FixtureRepo) -> None:
     assert tags[0].sha == commit_at_tag.sha
 
 
+def test_rejects_option_like_ref(fixture_repo: FixtureRepo) -> None:
+    for bad in ["--output=/tmp/x", "-x", "--upload-pack=evil", "ref with space"]:
+        with pytest.raises(GitError):
+            fixture_repo.repo.commits(bad)
+        with pytest.raises(GitError):
+            fixture_repo.repo.resolve(bad)
+
+
+def test_arg_injection_writes_no_file(fixture_repo: FixtureRepo, tmp_path) -> None:
+    target = tmp_path / "pwned.txt"
+    with pytest.raises(GitError):
+        fixture_repo.repo.commits(f"--output={target}")
+    assert not target.exists()  # the whole point: no arbitrary file write
+
+
+def test_since_is_also_guarded(fixture_repo: FixtureRepo, tmp_path) -> None:
+    target = tmp_path / "pwned2.txt"
+    with pytest.raises(GitError):
+        fixture_repo.repo.commits("main", since=f"--output={target}")
+    assert not target.exists()
+
+
 @pytest.mark.parametrize(
     "raw,expected_new,expected_old",
     [

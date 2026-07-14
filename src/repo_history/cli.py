@@ -76,13 +76,13 @@ def plan(
     try:
         git_repo = GitRepo(repo)
         get_analyzer(method)  # validate the method name early with a clear error
+        result = run_analysis(
+            git_repo, branch, method=method, since=since, max_count=max_count
+        )
     except (GitError, KeyError) as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
-    result = run_analysis(
-        git_repo, branch, method=method, since=since, max_count=max_count
-    )
     if not result.episodes:
         typer.secho("no episodes to analyze (history is already covered)", bold=True)
         return
