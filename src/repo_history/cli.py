@@ -47,6 +47,11 @@ def plan(
     method: str = typer.Option(
         "mechanical", "--method", "-m", help="Analysis method to run (see `methods`)."
     ),
+    since: str = typer.Option(
+        None,
+        "--since",
+        help="Only analyze commits after this sha (incremental; see `status`).",
+    ),
     max_count: int = typer.Option(
         None, "--max-count", help="Only walk the most recent N commits."
     ),
@@ -75,7 +80,12 @@ def plan(
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
-    result = run_analysis(git_repo, branch, method=method, max_count=max_count)
+    result = run_analysis(
+        git_repo, branch, method=method, since=since, max_count=max_count
+    )
+    if not result.episodes:
+        typer.secho("no episodes to analyze (history is already covered)", bold=True)
+        return
 
     if as_json:
         typer.echo(json.dumps(result.to_dict(), indent=2))
@@ -164,10 +174,49 @@ def build(
 @app.command()
 def status(
     repo: Path = typer.Option(Path("."), "--repo", help="Path to the git repository."),
+    out: Path = typer.Option(
+        None, "--out", help="Output directory (default: <repo>/.repo-memory)."
+    ),
 ) -> None:
     """Show what has been analyzed and how much history is new since the last run."""
-    typer.echo("`status` is not implemented yet (coming in an upcoming commit).")
-    raise typer.Exit(code=1)
+    from .git import GitError, GitRepo
+    from .state import read_status
+
+    out_dir = out or (repo / ".repo-memory")
+    try:
+        git_repo = GitRepo(repo)
+    except GitError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    state = read_status(git_repo, out_dir)
+    if not state.has_memory:
+        typer.echo(f"no memory at {out_dir}")
+        typer.echo("run: repo-history plan   (then the /repo-history skill, then build)")
+        return
+
+    typer.secho(f"memory at {out_dir}", bold=True)
+    typer.echo(f"  method: {state.method}")
+    typer.echo(f"  ref:    {state.ref} @ {str(state.head)[:8]}")
+    typer.echo(f"  built:  {state.built_at}")
+    counts = state.counts
+    typer.echo(
+        f"  {counts.get('episodes', 0)} episodes · {counts.get('decisions', 0)} decisions"
+        f" · {counts.get('landmines', 0)} landmines"
+    )
+
+    if state.head_missing:
+        typer.secho(
+            "\nthe recorded head is not in this repo (rebased or force-pushed?);"
+            " re-run a full plan",
+            fg=typer.colors.YELLOW,
+        )
+        return
+    if state.new_commits == 0:
+        typer.secho("\nup to date", fg=typer.colors.GREEN)
+    else:
+        typer.secho(f"\n{state.new_commits} new commit(s) since the last build", bold=True)
+        typer.echo(f"  repo-history plan --since {str(state.head)[:12]}")
 
 
 def main() -> None:
