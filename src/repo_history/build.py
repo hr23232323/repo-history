@@ -229,6 +229,8 @@ def _timeline_json(manifest: dict, analyses: list[EpisodeAnalysis]) -> str:
                 "summary": analysis.summary,
                 "architecture_note": analysis.architecture_note,
                 "commit_shas": entry.get("commit_shas", []),
+                # paths let the MCP server answer "why is *this file* like this?"
+                "paths": entry.get("paths", []),
             }
         )
     return json.dumps(items, indent=2)

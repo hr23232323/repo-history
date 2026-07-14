@@ -219,6 +219,33 @@ def status(
         typer.echo(f"  repo-history plan --since {str(state.head)[:12]}")
 
 
+@app.command()
+def mcp(
+    repo: Path = typer.Option(Path("."), "--repo", help="Path to the git repository."),
+    out: Path = typer.Option(
+        None, "--out", help="Memory directory to serve (default: <repo>/.repo-memory)."
+    ),
+) -> None:
+    """Serve .repo-memory over MCP (stdio) so agents can query it live."""
+    out_dir = out or (repo / ".repo-memory")
+    if not (out_dir / "index.json").exists():
+        typer.secho(
+            f"no memory at {out_dir}; run plan -> /repo-history -> build first",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    from .mcp_server import build_server
+
+    try:
+        server, _memory = build_server(out_dir)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    server.run()
+
+
 def main() -> None:
     app()
 

@@ -70,6 +70,21 @@ repo-history plan --since <sha>
 
 Then commit `.repo-memory/`.
 
+### Serve it to agents live (MCP)
+
+Instead of (or as well as) committing the files, expose the memory over MCP so an
+agent can query it on demand — "why is this file like this?", "anything I should
+know before I change X?":
+
+```bash
+uv tool install "repo-history[mcp]"
+repo-history mcp        # stdio server over ./.repo-memory
+```
+
+Tools: `why_is_this(path)`, `list_decisions(topic)`, `list_landmines()`,
+`check_before_you_do(proposal)`, `get_timeline()`, `get_hotspots()`. The server
+is a pure reader — no LLM, no git, no network.
+
 ## How it works
 
 Two **deterministic halves** with the LLM sandwiched between them. The halves only
@@ -150,9 +165,10 @@ actually exercised.
 
 ## Status
 
-Alpha. The engine and the skill work end-to-end (see the self-analysis example).
-An MCP server that serves `.repo-memory/` to agents as live, queryable context is
-the next step.
+Alpha, but working end-to-end: the deterministic engine, the `/repo-history`
+skill, incremental re-runs, and the MCP server are all in place (see the
+self-analysis example). The `mechanical` analysis method is the only one shipped
+so far; more (and better episode grouping) are where the work goes next.
 
 ## License
 
