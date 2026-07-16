@@ -72,6 +72,15 @@ def test_raw_diff_contains_change(fixture_repo: FixtureRepo) -> None:
     assert "helper.py" in diff
 
 
+def test_raw_diff_byte_cap_truncates(fixture_repo: FixtureRepo) -> None:
+    repo = fixture_repo.repo
+    sha = repo.resolve("main")
+    full = repo.raw_diff(sha)
+    capped = repo.raw_diff(sha, max_bytes=20)
+    assert "diff truncated" in capped
+    assert len(capped) < len(full)
+
+
 def test_tags_resolves_annotated(fixture_repo: FixtureRepo) -> None:
     tags = fixture_repo.repo.tags()
     assert [t.name for t in tags] == ["v1.0"]

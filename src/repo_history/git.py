@@ -199,13 +199,36 @@ class GitRepo:
             )
         return changes
 
-    def raw_diff(self, sha: str) -> str:
-        """The full unified diff a commit introduced (vs its first parent)."""
+    def raw_diff(self, sha: str, *, max_bytes: int = 2_000_000) -> str:
+        """The unified diff a commit introduced (vs its first parent).
+
+        Reading stops after ``max_bytes`` so a single commit that adds a huge
+        (possibly generated) file can't exhaust memory on an untrusted repo.
+        """
         _check_ref(sha)
-        return self._run(
-            "show", "--format=", "--first-parent", "--no-color",
-            "--end-of-options", sha,
+        proc = subprocess.Popen(
+            [
+                "git", "show", "--format=", "--first-parent", "--no-color",
+                "--end-of-options", sha,
+            ],
+            cwd=self.path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
+        try:
+            assert proc.stdout is not None
+            out = proc.stdout.read(max_bytes)
+            truncated = proc.stdout.read(1) != ""  # is there more we're dropping?
+        finally:
+            proc.stdout.close()  # type: ignore[union-attr]
+            proc.terminate()
+            proc.wait()
+        if truncated:
+            out += f"\n... [diff truncated: exceeded {max_bytes} bytes]"
+        return out
 
     def tags(self) -> list[Tag]:
         """All tags, resolved to their commit and sorted oldest-first."""

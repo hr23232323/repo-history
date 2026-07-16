@@ -7,9 +7,16 @@ import json
 import pytest
 from conftest import FixtureRepo
 
-from repo_history.analysis import run_analysis
+from repo_history.analysis import Episode, run_analysis
 from repo_history.security import scrub
-from repo_history.work import WORK_DIRNAME, condense_diff, materialize
+from repo_history.work import (
+    WORK_DIRNAME,
+    _check_episode_id,
+    _fence,
+    condense_diff,
+    materialize,
+    render_bundle,
+)
 
 
 @pytest.mark.parametrize(
@@ -75,6 +82,49 @@ def test_condense_diff_truncates_large_files() -> None:
     condensed = condense_diff(diff, max_file_lines=50, max_total_lines=1000)
     assert "lines truncated" in condensed
     assert len(condensed.splitlines()) <= 60
+
+
+def test_condense_diff_caps_a_giant_single_line() -> None:
+    # A minified line is one "line" but megabytes wide — the line-count cap alone
+    # would let it through, so there is a per-line char cap too.
+    diff = "diff --git a/app.min.js b/app.min.js\n+" + "x" * 100_000
+    condensed = condense_diff(diff)
+    assert "more chars]" in condensed
+    assert len(condensed) < 2_000
+
+
+def test_fence_outgrows_embedded_backticks() -> None:
+    assert _fence("no backticks") == "```"
+    # content containing a ``` run needs a longer fence to stay enclosed
+    assert len(_fence("evil ``` closes early")) >= 4
+    assert len(_fence("````" )) >= 5
+
+
+def test_bundle_has_untrusted_notice_and_survives_fence_breakout(
+    fixture_repo: FixtureRepo,
+) -> None:
+    repo = fixture_repo.repo
+    sha = repo.resolve("main")
+    episode = Episode(
+        id="ep-0001", title="t", kind="change", commit_shas=[sha], paths=[], rationale="r"
+    )
+    bundle, _ = render_bundle(repo, episode)
+    assert "untrusted" in bundle.lower()
+
+
+def test_check_episode_id_rejects_traversal() -> None:
+    for good in ["ep-0001", "release_1.2", "abc"]:
+        _check_episode_id(good)  # no raise
+    for bad in ["../etc/passwd", "..", ".", "a/b", "a\\b", "with space"]:
+        with pytest.raises(ValueError):
+            _check_episode_id(bad)
+
+
+def test_materialize_rejects_unsafe_episode_id(fixture_repo: FixtureRepo, tmp_path) -> None:
+    result = run_analysis(fixture_repo.repo, "main", method="mechanical")
+    result.episodes[0].id = "../../escape"
+    with pytest.raises(ValueError):
+        materialize(fixture_repo.repo, result, tmp_path / ".repo-memory", ref="main")
 
 
 def test_condense_diff_respects_total_cap() -> None:
