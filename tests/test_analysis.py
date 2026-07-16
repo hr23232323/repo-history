@@ -19,7 +19,7 @@ from repo_history.analysis.mechanical import (
     compute_coupling,
     detect_reverts,
 )
-from repo_history.analysis.util import is_trivial
+from repo_history.analysis.util import build_canonical_map, is_trivial
 from repo_history.git import Commit, FileChange, GitRepo
 
 
@@ -139,6 +139,33 @@ def test_episode_grouping_keeps_tagged_commit_with_its_release(tmp_path) -> None
 
     assert ep_of[sha["c1"]].id == ep_of[sha["c2"]].id  # c2 (tagged) stays with c1
     assert ep_of[sha["c3"]].id != ep_of[sha["c1"]].id  # c3 (post-release) splits off
+
+
+def test_build_canonical_map_terminates_on_cycle() -> None:
+    # A rename cycle a->b->a must not loop forever.
+    result = build_canonical_map([("a", "b"), ("b", "a")])
+    assert set(result) == {"a", "b"}
+    assert all(v in {"a", "b"} for v in result.values())
+
+
+def test_hotspot_follows_double_rename(tmp_path) -> None:
+    d = tmp_path / "dr"
+    d.mkdir()
+    ts = 1_700_000_000
+    _git(d, "init", "-b", "main", ts=ts)
+    (d / "a.py").write_text("1\n")
+    _git(d, "add", "-A", ts=ts)
+    _git(d, "commit", "-m", "add a", ts=ts)
+    _git(d, "mv", "a.py", "b.py", ts=ts + 3600)
+    _git(d, "commit", "-m", "a->b", ts=ts + 3600)
+    _git(d, "mv", "b.py", "c.py", ts=ts + 7200)
+    _git(d, "commit", "-m", "b->c", ts=ts + 7200)
+
+    result = run_analysis(GitRepo(d), "main", method="mechanical")
+    hotspots = {h.path: h for h in result.sections["hotspots"]}
+    # all three commits aggregate under the final name
+    assert "a.py" not in hotspots and "b.py" not in hotspots
+    assert hotspots["c.py"].commits == 3
 
 
 def test_coupling_counts_cochanges() -> None:

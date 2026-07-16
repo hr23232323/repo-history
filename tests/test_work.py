@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 
 import pytest
-from conftest import FixtureRepo
+from conftest import FixtureRepo, _git
+
+from repo_history.git import GitRepo
 
 from repo_history.analysis import Episode, run_analysis
 from repo_history.security import scrub
@@ -100,16 +102,42 @@ def test_fence_outgrows_embedded_backticks() -> None:
     assert len(_fence("````" )) >= 5
 
 
-def test_bundle_has_untrusted_notice_and_survives_fence_breakout(
-    fixture_repo: FixtureRepo,
-) -> None:
+def _one_commit_repo(tmp_path, name: str, filename: str, content: str):
+    d = tmp_path / name
+    d.mkdir()
+    _git(d, "init", "-b", "main", ts=1_700_000_000)
+    (d / filename).write_text(content)
+    _git(d, "add", "-A", ts=1_700_000_000)
+    _git(d, "commit", "-m", "add", ts=1_700_000_000)
+    repo = GitRepo(d)
+    return repo, repo.resolve("main")
+
+
+def _episode(sha: str) -> Episode:
+    return Episode(id="ep-0001", title="t", kind="change", commit_shas=[sha], paths=[], rationale="r")
+
+
+def test_bundle_has_untrusted_notice(fixture_repo: FixtureRepo) -> None:
     repo = fixture_repo.repo
-    sha = repo.resolve("main")
-    episode = Episode(
-        id="ep-0001", title="t", kind="change", commit_shas=[sha], paths=[], rationale="r"
-    )
-    bundle, _ = render_bundle(repo, episode)
+    bundle, _ = render_bundle(repo, _episode(repo.resolve("main")))
     assert "untrusted" in bundle.lower()
+
+
+def test_bundle_fence_outgrows_backticks_in_diff(tmp_path) -> None:
+    # A diff whose content contains a ``` run must be wrapped in a longer fence,
+    # so the injected backticks can't close the code block early.
+    repo, sha = _one_commit_repo(tmp_path, "fence", "doc.md", "intro\n```\ncode\n```\n")
+    bundle, _ = render_bundle(repo, _episode(sha))
+    assert "````diff" in bundle  # a 4-backtick fence, not the default 3
+
+
+def test_render_bundle_scrubs_planted_secret(tmp_path) -> None:
+    repo, sha = _one_commit_repo(
+        tmp_path, "secret", ".env", 'API_KEY="supersecretvalue12345"\n'
+    )
+    bundle, redactions = render_bundle(repo, _episode(sha))
+    assert redactions >= 1
+    assert "supersecretvalue12345" not in bundle
 
 
 def test_check_episode_id_rejects_traversal() -> None:
@@ -156,12 +184,15 @@ def test_materialize_writes_manifest_and_bundles(
     assert (out / ".gitignore").read_text().strip() == f"{WORK_DIRNAME}/"
 
 
-def test_materialize_scrubs_bundle_diffs(fixture_repo: FixtureRepo, tmp_path) -> None:
-    # A bundle is just rendered commits; verify the scrub runs by checking a
-    # planted secret in a synthetic diff is redacted end-to-end.
-    from repo_history.work import condense_diff as _cd
+def test_materialize_scrubs_written_bundle(tmp_path) -> None:
+    # End-to-end: a secret in a real commit must not appear in the file on disk.
+    repo, _sha = _one_commit_repo(
+        tmp_path, "msecret", ".env", 'DATABASE_URL=postgres://u:hunter2pass@h/db\n'
+    )
+    result = run_analysis(repo, "main", method="mechanical")
+    out = tmp_path / ".repo-memory"
+    materialized = materialize(repo, result, out, ref="main")
 
-    secret_diff = 'diff --git a/.env b/.env\n+API_KEY="sk-livesecret999999"\n'
-    scrubbed, count = scrub(_cd(secret_diff))
-    assert count == 1
-    assert "sk-livesecret999999" not in scrubbed
+    assert materialized.redactions >= 1
+    for bundle in (materialized.work_dir / "episodes").glob("*.md"):
+        assert "hunter2pass" not in bundle.read_text()
