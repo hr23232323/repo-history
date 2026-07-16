@@ -13,18 +13,40 @@ from repo_history.work import WORK_DIRNAME, condense_diff, materialize
 
 
 @pytest.mark.parametrize(
-    "text",
+    "text,leak",
     [
-        'api_key = "sk-abcdef123456"',
-        "AWS_KEY=AKIAIOSFODNN7EXAMPLE",
-        "token: ghp_abcdefghijklmnopqrstuvwxyz0123456789",
-        "password = 'hunter2secret'",
+        ("AWS_KEY=AKIAIOSFODNN7EXAMPLE", "AKIAIOSFODNN7EXAMPLE"),
+        (
+            "token: ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+            "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+        ),
+        ("password = 'hunter2secret'", "hunter2secret"),
+        # shapes the first version of the scrubber missed:
+        (
+            "auth = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N",
+            "dozjgNryP4J3jVmNHl0w5N",
+        ),
+        ("key: AIzaSyA1234567890abcdefghijklmnopqrstuvw", "AIzaSyA1234567890abcdefghijklmnopqrstuvw"),
+        ("STRIPE=sk_live_abcdef1234567890ABCDEF", "sk_live_abcdef1234567890ABCDEF"),
+        ("openai sk-ant-api03-abcdefghijklmnopqrstuvwxyz012345", "sk-ant-api03-abcdefghijklmnopqrstuvwxyz012345"),
+        ("github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz123456", "github_pat_11ABCDEFG0abcdefghijklmnopqrstuvwxyz123456"),
+        ("DATABASE_URL=postgres://admin:sup3rs3cret@db.example.com:5432/app", "sup3rs3cret"),
+        # a quoted value containing spaces must be redacted in full
+        ('password = "correct horse battery staple"', "correct horse battery staple"),
     ],
 )
-def test_scrub_redacts_secrets(text: str) -> None:
+def test_scrub_redacts_secrets(text: str, leak: str) -> None:
     scrubbed, count = scrub(text)
     assert count >= 1
-    assert "[REDACTED" in scrubbed or "REDACTED" in scrubbed
+    assert leak not in scrubbed, f"secret leaked: {scrubbed}"
+
+
+def test_scrub_connection_string_keeps_context() -> None:
+    scrubbed, _ = scrub("postgres://admin:sup3rs3cret@db.example.com/app")
+    assert "sup3rs3cret" not in scrubbed
+    # scheme, user and host survive so the diff still reads sensibly
+    assert "postgres://admin:" in scrubbed
+    assert "@db.example.com/app" in scrubbed
 
 
 def test_scrub_leaves_clean_text_untouched() -> None:
