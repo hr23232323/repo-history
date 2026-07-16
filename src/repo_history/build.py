@@ -40,8 +40,11 @@ def build_artifacts(out_dir: Path) -> BuildResult:
         raise BuildError(
             f"no manifest at {manifest_path}; run `repo-history plan` first"
         )
-    manifest = json.loads(manifest_path.read_text())
-    analysis = _read_json(work_dir / "analysis.json", default={})
+    try:
+        manifest = json.loads(manifest_path.read_text())
+        analysis = _read_json(work_dir / "analysis.json", default={})
+    except json.JSONDecodeError as exc:
+        raise BuildError(f"corrupt work manifest in {work_dir}: {exc}") from exc
     analyses = _load_analyses(work_dir, manifest)
     synthesis = _load_synthesis(work_dir)
 
@@ -83,10 +86,11 @@ def _load_analyses(work_dir: Path, manifest: dict) -> list[EpisodeAnalysis]:
     for path in analyses_dir.glob("*.json"):
         analysis = EpisodeAnalysis.model_validate_json(path.read_text())
         by_id[analysis.id] = analysis
-    order = [e["id"] for e in manifest.get("episodes", [])]
+    order = [e.get("id") for e in manifest.get("episodes", []) if e.get("id")]
+    known = set(order)
     ordered = [by_id[i] for i in order if i in by_id]
     # include any analyses not referenced by the manifest, in filename order
-    ordered += [a for i, a in sorted(by_id.items()) if i not in set(order)]
+    ordered += [a for i, a in sorted(by_id.items()) if i not in known]
     return ordered
 
 

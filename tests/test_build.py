@@ -52,6 +52,15 @@ def test_build_requires_manifest(tmp_path) -> None:
         build_artifacts(tmp_path / ".repo-memory")
 
 
+def test_build_reports_corrupt_manifest(fixture_repo: FixtureRepo, tmp_path) -> None:
+    result = run_analysis(fixture_repo.repo, "main", method="mechanical")
+    out = tmp_path / ".repo-memory"
+    materialize(fixture_repo.repo, result, out, ref="main")
+    (out / ".work" / "manifest.json").write_text("{ not valid json")
+    with pytest.raises(BuildError, match="corrupt"):
+        build_artifacts(out)
+
+
 def test_build_writes_all_artifacts(fixture_repo: FixtureRepo, tmp_path) -> None:
     out = _prepare(fixture_repo, tmp_path)
     result = build_artifacts(out)

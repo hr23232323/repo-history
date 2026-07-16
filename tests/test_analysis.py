@@ -56,6 +56,16 @@ def test_unknown_method_raises() -> None:
         get_analyzer("does-not-exist")
 
 
+def test_analysis_on_empty_repo_is_clear(tmp_path) -> None:
+    from repo_history.git import GitError
+
+    d = tmp_path / "empty"
+    d.mkdir()
+    _git(d, "init", "-b", "main", ts=1_700_000_000)
+    with pytest.raises(GitError, match="no commits"):
+        run_analysis(GitRepo(d), "main", method="mechanical")
+
+
 def test_result_is_json_serializable(fixture_repo: FixtureRepo) -> None:
     result = run_analysis(fixture_repo.repo, "main", method="mechanical")
     dumped = json.dumps(result.to_dict())  # must not raise on dataclasses

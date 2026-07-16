@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from ..git import Commit, FileChange, GitRepo, Tag
+from ..git import Commit, FileChange, GitError, GitRepo, Tag
 from .util import build_canonical_map, is_trivial
 
 
@@ -136,7 +136,12 @@ def load_context(
     max_count: int | None = None,
 ) -> AnalysisContext:
     """Walk history once and assemble the shared context for any method."""
-    commits = repo.commits(ref, since=since, max_count=max_count)
+    try:
+        commits = repo.commits(ref, since=since, max_count=max_count)
+    except GitError as exc:
+        if repo.is_empty():
+            raise GitError("repository has no commits yet") from exc
+        raise
     stats: list[CommitStats] = []
     renames: list[tuple[str, str]] = []
     for commit in commits:

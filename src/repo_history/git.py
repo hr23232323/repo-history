@@ -127,6 +127,14 @@ class GitRepo:
 
     # -- refs --------------------------------------------------------------
 
+    def is_empty(self) -> bool:
+        """True if the repository has no commits yet (unborn HEAD)."""
+        try:
+            self.resolve("HEAD")
+        except GitError:
+            return True
+        return False
+
     def resolve(self, ref: str) -> str:
         """Resolve a ref (branch, tag, short sha, HEAD) to a full commit sha."""
         _check_ref(ref)
