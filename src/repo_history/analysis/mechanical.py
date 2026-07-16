@@ -155,8 +155,10 @@ def group_episodes(
         group_region = None
 
     for st in sig:
-        region = bisect.bisect_right(tag_ts, st.commit.timestamp)
-        paths = {ctx.canon(p) for p in st.paths}
+        # bisect_left so the commit a tag points at belongs to the release it
+        # names, not the window after it.
+        region = bisect.bisect_left(tag_ts, st.commit.timestamp)
+        paths = {ctx.canon(p) for p in st.paths if not is_trivial_file(p)}
 
         if st.commit.sha in revert_shas:
             flush()

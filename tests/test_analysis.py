@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from conftest import FixtureRepo
+from conftest import FixtureRepo, _git
 
 from repo_history.analysis import (
     AnalysisContext,
@@ -20,7 +20,7 @@ from repo_history.analysis.mechanical import (
     detect_reverts,
 )
 from repo_history.analysis.util import is_trivial
-from repo_history.git import Commit, FileChange
+from repo_history.git import Commit, FileChange, GitRepo
 
 
 def _stats(sha: str, paths: list[str], *, subject: str = "c", body: str = "") -> CommitStats:
@@ -104,6 +104,31 @@ def test_mechanical_isolates_revert_episode(fixture_repo: FixtureRepo) -> None:
 
 
 # -- isolated unit tests ---------------------------------------------------
+
+
+def test_episode_grouping_keeps_tagged_commit_with_its_release(tmp_path) -> None:
+    # The commit a tag points at should group with its release predecessors, not
+    # with post-release work. This distinguishes bisect_left from bisect_right.
+    d = tmp_path / "rel"
+    d.mkdir()
+    ts = 1_700_000_000
+    _git(d, "init", "-b", "main", ts=ts)
+    for i, content in enumerate(["1\n", "2\n"]):
+        (d / "a.py").write_text(content)
+        _git(d, "add", "-A", ts=ts + i * 3600)
+        _git(d, "commit", "-m", f"c{i + 1}", ts=ts + i * 3600)
+    _git(d, "tag", "-a", "v1", "-m", "release", ts=ts + 3600)  # tag points at c2
+    (d / "a.py").write_text("3\n")
+    _git(d, "add", "-A", ts=ts + 7200)
+    _git(d, "commit", "-m", "c3", ts=ts + 7200)
+
+    repo = GitRepo(d)
+    sha = {c.subject: c.sha for c in repo.commits("main")}
+    result = run_analysis(repo, "main", method="mechanical")
+    ep_of = {s: e for e in result.episodes for s in e.commit_shas}
+
+    assert ep_of[sha["c1"]].id == ep_of[sha["c2"]].id  # c2 (tagged) stays with c1
+    assert ep_of[sha["c3"]].id != ep_of[sha["c1"]].id  # c3 (post-release) splits off
 
 
 def test_coupling_counts_cochanges() -> None:

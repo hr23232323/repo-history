@@ -18,14 +18,16 @@ from pathlib import Path
 # and control characters are never valid in a ref either.
 _UNSAFE_REF = re.compile(r"^-|[\x00-\x1f\x7f]|\s")
 
-# Field and record separators for `git log --format`. These bytes effectively
-# never appear in commit metadata, so parsing stays unambiguous even when commit
-# messages contain newlines, tabs, or quotes.
+# Field and record separators for `git log --format`. Records are separated by
+# NUL, which cannot appear in a commit message, so a hostile/odd commit body can
+# never split into a spurious record. The body (%b) is the last field and is
+# parsed greedily, so an embedded field separator in it can't truncate it either.
 _FIELD_SEP = "\x1f"
-_RECORD_SEP = "\x1e"
-_LOG_FORMAT = _FIELD_SEP.join(
-    ["%H", "%h", "%an", "%ae", "%at", "%P", "%s", "%b"]
-) + _RECORD_SEP
+_RECORD_SEP = "\x00"
+_LOG_FIELDS = ["%H", "%h", "%an", "%ae", "%at", "%P", "%s", "%b"]
+# `%x00` is a git format directive that emits a NUL in the *output*; a literal
+# NUL can't be passed in the argv format string, so it must not appear here.
+_LOG_FORMAT = _FIELD_SEP.join(_LOG_FIELDS) + "%x00"
 
 
 class GitError(RuntimeError):
@@ -265,11 +267,12 @@ def _split_records(out: str) -> list[str]:
 
 
 def _parse_commit(record: str) -> Commit:
-    fields = record.strip("\n").split(_FIELD_SEP)
-    # body (%b) may be empty and is the last field.
-    if len(fields) < 8:
-        fields += [""] * (8 - len(fields))
-    sha, short_sha, an, ae, at, parents, subject, body = fields[:8]
+    # maxsplit keeps the body (last field) intact even if it contains a field
+    # separator: everything after the 7th separator is the body, verbatim.
+    fields = record.strip("\n").split(_FIELD_SEP, len(_LOG_FIELDS) - 1)
+    if len(fields) < len(_LOG_FIELDS):
+        fields += [""] * (len(_LOG_FIELDS) - len(fields))
+    sha, short_sha, an, ae, at, parents, subject, body = fields
     parent_shas = tuple(p for p in parents.split() if p)
     return Commit(
         sha=sha,

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import FixtureRepo
+from conftest import FixtureRepo, _git
 
 from repo_history.git import GitError, GitRepo, _parse_numstat_path
 
@@ -14,6 +14,23 @@ from repo_history.git import GitError, GitRepo, _parse_numstat_path
 def test_not_a_git_repo(tmp_path: Path) -> None:
     with pytest.raises(GitError):
         GitRepo(tmp_path)
+
+
+def test_commits_survive_separator_bytes_in_body(tmp_path: Path) -> None:
+    # A commit body containing the field/record separator bytes must not split
+    # into a spurious record or truncate the body (untrusted-repo posture).
+    repo_dir = tmp_path / "sep"
+    repo_dir.mkdir()
+    ts = 1_700_000_000
+    _git(repo_dir, "init", "-b", "main", ts=ts)
+    (repo_dir / "f.txt").write_text("x\n")
+    _git(repo_dir, "add", "-A", ts=ts)
+    _git(repo_dir, "commit", "-m", "subject line", "-m", "before\x1emid\x1fafter", ts=ts)
+
+    commits = GitRepo(repo_dir).commits("main")
+    assert len(commits) == 1
+    assert commits[0].subject == "subject line"
+    assert "before" in commits[0].body and "after" in commits[0].body
 
 
 def test_commits_are_chronological(fixture_repo: FixtureRepo) -> None:
