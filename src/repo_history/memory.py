@@ -66,7 +66,7 @@ class RepoMemory:
         episodes = [
             t
             for t in self._timeline
-            if any(needle == p or p.endswith("/" + needle) or p == needle for p in t.get("paths", []))
+            if any(p == needle or p.endswith("/" + needle) for p in t.get("paths", []))
         ]
         ep_ids = {t["id"] for t in episodes}
         return {

@@ -76,12 +76,9 @@ class AnalysisResult:
     sections: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "method": self.method,
-            "summary": _jsonable(self.summary),
-            "episodes": [_jsonable(e) for e in self.episodes],
-            "sections": _jsonable(self.sections),
-        }
+        # asdict already recurses into nested dataclasses, lists, and dicts,
+        # so the sections' Hotspot/CoupledPair/RevertInfo objects convert too.
+        return dataclasses.asdict(self)
 
 
 class Analyzer(ABC):
@@ -169,14 +166,3 @@ def run_analysis(
     """Load the context and run the chosen method against it."""
     ctx = load_context(repo, ref, since=since, max_count=max_count)
     return get_analyzer(method).run(ctx)
-
-
-def _jsonable(value: Any) -> Any:
-    """Recursively convert dataclasses/containers into JSON-serializable data."""
-    if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return {k: _jsonable(v) for k, v in dataclasses.asdict(value).items()}
-    if isinstance(value, dict):
-        return {k: _jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(v) for v in value]
-    return value

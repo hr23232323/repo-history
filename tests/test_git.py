@@ -93,7 +93,7 @@ def test_raw_diff_byte_cap_truncates(fixture_repo: FixtureRepo) -> None:
     repo = fixture_repo.repo
     sha = repo.resolve("main")
     full = repo.raw_diff(sha)
-    capped = repo.raw_diff(sha, max_bytes=20)
+    capped = repo.raw_diff(sha, max_chars=20)
     assert "diff truncated" in capped
     assert len(capped) < len(full)
 
