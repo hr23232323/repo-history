@@ -46,9 +46,22 @@ The full, unedited run is in [`examples/self-analysis/`](./examples/self-analysi
 
 ## Install
 
+Requires [uv](https://docs.astral.sh/uv/). The AI analysis step also needs
+[Claude Code](https://claude.com/claude-code); the plain CLI (history stats,
+hotspots) works on its own.
+
 ```bash
-uv tool install repo-history        # or: uvx repo-history --help
-repo-history install-skill          # adds /repo-history to this project
+# straight from GitHub — works today
+uv tool install git+https://github.com/hr23232323/repo-history
+
+# or, once published to PyPI
+uv tool install repo-history
+```
+
+Then add the Claude Code skill:
+
+```bash
+repo-history install-skill          # adds /repo-history to the current project
 repo-history install-skill --global # ...or to every project (~/.claude)
 ```
 
