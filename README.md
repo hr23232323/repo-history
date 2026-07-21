@@ -118,7 +118,7 @@ git history
 ┌──────────────────── deterministic engine (this package) ─────────────────────┐
 │  plan    hotspots · change-coupling · revert detection · drop trivial commits │
 │          → segment by release → cluster into "episodes" → condense diffs      │
-│          → scrub secrets                                                      │
+│          → enrich with PR/issue "why" (GitHub) → scrub secrets                │
 └──────────────────────────────────────────────────────────────────────────────┘
     │  .repo-memory/.work/  (one Markdown bundle per episode)
     ▼
@@ -135,6 +135,16 @@ git history
 
 The LLM step runs **inside Claude Code**, so it uses your existing subscription.
 There's no API key to configure and no per-token bill from this tool.
+
+### The "why" lives in pull requests
+
+Commits say *what* changed; the PR that merged them, the issue it closed, and the
+review discussion usually say *why*. When the repo is on GitHub and `gh` is
+authenticated, `repo-history` automatically pulls that context into each episode
+(PR body, linked-issue problem statement, human review notes — bots filtered, and
+all secret-scrubbed like everything else). It's what lets a claim be graded
+`[observed]` rather than `[inferred]`. No GitHub, no `gh`, or offline? It falls
+back to commits-only. Turn it off with `--no-github`.
 
 ### Why not analyze every commit?
 
