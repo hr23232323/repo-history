@@ -49,13 +49,18 @@ def build_artifacts(out_dir: Path) -> BuildResult:
     synthesis = _load_synthesis(work_dir)
 
     result = BuildResult(out_dir=out_dir)
-    _write(out_dir, "TIMELINE.md", _render_timeline(manifest, analyses), result)
+    # Flagship, agent-facing: the prescriptive guardrails lead.
+    _write(out_dir, "GUARDRAILS.md", _render_guardrails(manifest, analyses), result)
     _write(out_dir, "DECISIONS.md", _render_decisions(analyses), result)
     _write(out_dir, "LANDMINES.md", _render_landmines(analyses), result)
-    _write(out_dir, "ARCHITECTURE.md", _render_architecture(analyses, synthesis), result)
-    _write(out_dir, "HOTSPOTS.md", _render_hotspots(analysis), result)
+    # Human onboarding narrative, deliberately demoted to a subdirectory: the
+    # controlled evidence says these overviews help people, not agent accuracy.
+    _write(out_dir, "onboarding/TIMELINE.md", _render_timeline(manifest, analyses), result)
+    _write(out_dir, "onboarding/ARCHITECTURE.md", _render_architecture(analyses, synthesis), result)
+    _write(out_dir, "onboarding/HOTSPOTS.md", _render_hotspots(analysis), result)
 
-    # JSON mirrors, structured for an MCP server to serve later.
+    # JSON mirrors stay flat at the root so machine consumers (the MCP server)
+    # find them in one place.
     _write(out_dir, "timeline.json", _timeline_json(manifest, analyses), result)
     _write(out_dir, "decisions.json", _decisions_json(analyses), result)
     _write(out_dir, "landmines.json", _landmines_json(analyses), result)
@@ -116,6 +121,59 @@ def _short(shas: list[str]) -> str:
     return ", ".join(s[:8] for s in shas)
 
 
+def _basis_tag(item) -> str:  # noqa: ANN001 (Decision | Landmine)
+    return "`[observed]`" if getattr(item, "basis", "inferred") == "observed" else "`[inferred]`"
+
+
+def _trust_first(pairs: list) -> list:
+    """Observed-basis items first; a reader should meet the grounded claims before guesses."""
+    return sorted(pairs, key=lambda pair: 0 if pair[1].basis == "observed" else 1)
+
+
+def _render_guardrails(manifest: dict, analyses: list[EpisodeAnalysis]) -> str:
+    """The flagship: prescriptive do/don't rules, evidence-linked, trust-graded."""
+    lines = [
+        "# Guardrails",
+        "",
+        _provenance(manifest),
+        "",
+        "Prescriptive rules distilled from this repo's history. "
+        "**[observed]** = stated outright in a commit/PR; **[inferred]** = deduced from "
+        "diffs, so trust it less. Every item links to its evidence.",
+        "",
+    ]
+    landmines = _trust_first([(a, m) for a in analyses for m in a.landmines])
+    decisions = _trust_first([(a, d) for a in analyses for d in a.decisions])
+    if not landmines and not decisions:
+        return "\n".join(
+            lines + ["_No guardrails yet. Run the /repo-history skill, then build._", ""]
+        )
+
+    lines += ["## 🚫 Do not repeat", ""]
+    if landmines:
+        for a, m in landmines:
+            detail = f" — {m.detail.strip()}" if m.detail.strip() else ""
+            lines.append(
+                f"- **{m.lesson.strip()}**{detail} {_basis_tag(m)} "
+                f"_({_short(m.evidence or [a.id])})_"
+            )
+    else:
+        lines.append("_None detected._")
+
+    lines += ["", "## ✅ Constraints from past decisions", ""]
+    if decisions:
+        for a, d in decisions:
+            why = f" — {d.why.strip()}" if d.why.strip() else ""
+            lines.append(
+                f"- **{d.statement.strip()}**{why} {_basis_tag(d)} "
+                f"_({_short(d.evidence or [a.id])})_"
+            )
+    else:
+        lines.append("_None inferred._")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _render_timeline(manifest: dict, analyses: list[EpisodeAnalysis]) -> str:
     lines = ["# Timeline", "", _provenance(manifest), ""]
     if not analyses:
@@ -137,8 +195,13 @@ def _render_timeline(manifest: dict, analyses: list[EpisodeAnalysis]) -> str:
 
 
 def _render_decisions(analyses: list[EpisodeAnalysis]) -> str:
-    lines = ["# Decisions", ""]
-    decisions = [(a, d) for a in analyses for d in a.decisions]
+    lines = [
+        "# Decisions",
+        "",
+        "Constraints inferred from history, grounded-first.",
+        "",
+    ]
+    decisions = _trust_first([(a, d) for a in analyses for d in a.decisions])
     if not decisions:
         return "\n".join(lines + ["_No decisions inferred yet._", ""])
     for analysis, decision in decisions:
@@ -146,7 +209,7 @@ def _render_decisions(analyses: list[EpisodeAnalysis]) -> str:
         if decision.why.strip():
             lines += ["", decision.why.strip()]
         evidence = decision.evidence or [analysis.id]
-        lines += ["", f"_evidence: {_short(evidence)}_", ""]
+        lines += ["", f"_{_basis_tag(decision)} · evidence: {_short(evidence)}_", ""]
     return "\n".join(lines)
 
 
@@ -157,7 +220,7 @@ def _render_landmines(analyses: list[EpisodeAnalysis]) -> str:
         "Do-not-repeat lessons: approaches that were reverted, abandoned, or removed.",
         "",
     ]
-    landmines = [(a, m) for a in analyses for m in a.landmines]
+    landmines = _trust_first([(a, m) for a in analyses for m in a.landmines])
     if not landmines:
         return "\n".join(lines + ["_None detected._", ""])
     for analysis, mine in landmines:
@@ -165,7 +228,7 @@ def _render_landmines(analyses: list[EpisodeAnalysis]) -> str:
         if mine.detail.strip():
             lines += ["", mine.detail.strip()]
         evidence = mine.evidence or [analysis.id]
-        lines += ["", f"_evidence: {_short(evidence)}_", ""]
+        lines += ["", f"_{_basis_tag(mine)} · evidence: {_short(evidence)}_", ""]
     return "\n".join(lines)
 
 
@@ -275,5 +338,6 @@ def _index_json(manifest: dict, result: BuildResult) -> str:
 
 def _write(out_dir: Path, name: str, content: str, result: BuildResult) -> None:
     path = out_dir / name
+    path.parent.mkdir(parents=True, exist_ok=True)  # name may include a subdir
     path.write_text(content if content.endswith("\n") else content + "\n")
     result.files.append(name)

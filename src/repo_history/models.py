@@ -8,22 +8,32 @@ JSON is validated before ``build`` ever renders it.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+# How well-grounded a claim is. "observed" = stated outright in a commit message,
+# PR, or issue; "inferred" = deduced from a diff and should be trusted less. This
+# is the trust signal that lets a reader (or agent) weight each claim — and lets
+# the analysis prefer honesty ("inferred", or omission) over confident fabrication.
+Basis = Literal["observed", "inferred"]
 
 
 class Decision(BaseModel):
-    """An engineering decision inferred from history."""
+    """An engineering decision, framed as a forward-looking constraint."""
 
-    statement: str  # what was decided, e.g. "Moved sessions from JWT to server-side"
+    statement: str  # phrased as guidance, e.g. "Use server-side sessions, not JWTs"
     why: str = ""  # the reason, as far as history reveals it
-    evidence: list[str] = Field(default_factory=list)  # commit shas / episode ids
+    basis: Basis = "inferred"
+    evidence: list[str] = Field(default_factory=list)  # commit shas / PRs / episode ids
 
 
 class Landmine(BaseModel):
     """A do-not-repeat lesson: a reverted approach, removed abstraction, etc."""
 
-    lesson: str  # the takeaway, phrased as guidance
+    lesson: str  # the takeaway, phrased as a "don't" guardrail
     detail: str = ""  # what happened and why it didn't work
+    basis: Basis = "inferred"
     evidence: list[str] = Field(default_factory=list)
 
 

@@ -38,7 +38,7 @@ class RepoMemory:
         return (self.out_dir / "index.json").exists()
 
     def overview(self) -> str:
-        path = self.out_dir / "ARCHITECTURE.md"
+        path = self.out_dir / "onboarding" / "ARCHITECTURE.md"
         return path.read_text() if path.exists() else ""
 
     def timeline(self) -> list[dict]:
