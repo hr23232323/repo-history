@@ -15,16 +15,24 @@ teammate — inherits the repo's memory.
 
 ## What it produces
 
-A `.repo-memory/` directory, readable by humans and agents alike:
+A `.repo-memory/` directory. It leads with the **prescriptive guardrails** an agent
+should load — the part a controlled study found actually helps — and keeps the
+narrative history as a human-onboarding bonus.
 
 | File | What's in it |
 | --- | --- |
-| `TIMELINE.md` | How the architecture evolved, in chapters. |
-| `DECISIONS.md` | Decisions inferred from history, with the evidence commits. |
-| `LANDMINES.md` | **Do-not-repeat lessons**: reverts, removed abstractions, failed approaches. |
-| `ARCHITECTURE.md` | The system today, annotated with how it got here. |
-| `HOTSPOTS.md` | Churn, change-coupling, bus-factor. Purely mechanical — zero LLM tokens. |
-| `*.json` | Machine-readable mirrors, shaped so an MCP server can serve them. |
+| **`GUARDRAILS.md`** | **The flagship.** Terse do/don't rules + decision-constraints, each evidence-linked and tagged `[observed]` (stated in a commit/PR) or `[inferred]` (deduced from a diff). This is what an agent loads. |
+| `LANDMINES.md` | **Do-not-repeat lessons**: reverts, removed abstractions, failed approaches — with the receipts. |
+| `DECISIONS.md` | Past decisions, framed as constraints, grounded-first. |
+| `onboarding/TIMELINE.md` | How the codebase evolved, in chapters — for humans getting oriented. |
+| `onboarding/ARCHITECTURE.md` | The system today, annotated with how it got here. |
+| `onboarding/HOTSPOTS.md` | Churn, change-coupling, bus-factor. Purely mechanical — zero LLM tokens. |
+| `*.json` | Machine-readable mirrors (carrying the trust grade), shaped so the MCP server can serve them. |
+
+**Why lead with guardrails?** A controlled ablation of repository context files found
+that narrative *overviews* don't measurably improve a coding agent's accuracy, while
+*instructions and constraints* — exactly what landmines and decision-rules are — do. So
+the output puts the agent-useful part first and treats the story as onboarding for people.
 
 ### Real output
 
