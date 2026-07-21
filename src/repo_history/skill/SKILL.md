@@ -58,24 +58,35 @@ Each subagent must:
 {
   "id": "ep-0001",
   "title": "short human title",
-  "summary": "1-3 sentences: what changed and why, for a timeline",
+  "summary": "1-3 sentences: what changed and why, for the onboarding timeline",
   "kind": "change | revert | release",
   "architecture_note": "how structure changed, or null",
   "decisions": [
-    {"statement": "the decision", "why": "the reason history reveals",
+    {"statement": "a forward-looking constraint, e.g. 'Use server-side sessions, not JWTs'",
+     "why": "the reason history reveals",
+     "basis": "observed | inferred",
      "evidence": ["<commit-sha-or-episode-id>"]}
   ],
   "landmines": [
-    {"lesson": "do-not-repeat guidance", "detail": "what happened and why it failed",
+    {"lesson": "a 'don't' guardrail, e.g. 'Don't reintroduce polling here'",
+     "detail": "what happened and why it failed",
+     "basis": "observed | inferred",
      "evidence": ["<commit-sha-or-episode-id>"]}
   ]
 }
 ```
 
 Rules for the analysis:
-- Ground every claim in the diff/message you were given. Do **not** invent
-  rationale the evidence doesn't support; if the "why" is unknown, say so briefly
-  or leave `why` empty.
+- **`decisions` and `landmines` are the point** — they are what an agent loads as
+  guardrails. Phrase each as an actionable rule: a decision is a constraint to
+  follow ("Use X, not Y"); a landmine is a "don't" ("Don't reintroduce Z").
+- **Grade every claim's `basis` honestly.** Use `"observed"` only when the reason
+  is stated outright in a commit message, PR, or issue in the bundle. Use
+  `"inferred"` when you're deducing it from the diff. When in doubt, `"inferred"`.
+- **Prefer omission over fabrication.** If a change's rationale isn't in the
+  evidence, don't invent one — leave `why` empty, or drop the item entirely. A
+  confidently-wrong guardrail is worse than a missing one; it misleads every
+  future agent that reads it.
 - `revert` episodes almost always yield a landmine — capture what was undone.
 - Reversed/removed abstractions, abandoned approaches, and guards-against-bugs are
   the highest-value landmines. Prefer a few sharp entries over many vague ones.
@@ -99,8 +110,10 @@ Read every `analyses/<id>.json`, then write
 repo-history build --repo <repo>
 ```
 
-This renders `<repo>/.repo-memory/`: `TIMELINE.md`, `DECISIONS.md`,
-`LANDMINES.md`, `ARCHITECTURE.md`, `HOTSPOTS.md`, JSON mirrors, and `index.json`.
+This renders `<repo>/.repo-memory/`: the flagship `GUARDRAILS.md` plus
+`DECISIONS.md` and `LANDMINES.md`, the human onboarding narrative under
+`onboarding/` (`TIMELINE.md`, `ARCHITECTURE.md`, `HOTSPOTS.md`), JSON mirrors, and
+`index.json`.
 
 ### 5. Report
 
