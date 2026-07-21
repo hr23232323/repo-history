@@ -58,6 +58,11 @@ def plan(
     out: Path = typer.Option(
         None, "--out", help="Output directory (default: <repo>/.repo-memory)."
     ),
+    no_github: bool = typer.Option(
+        False,
+        "--no-github",
+        help="Skip enriching bundles with GitHub PR/issue context.",
+    ),
     as_json: bool = typer.Option(
         False, "--json", help="Print the result as JSON and skip writing to disk."
     ),
@@ -93,13 +98,28 @@ def plan(
 
     _print_summary(result)
     out_dir = out or (repo / ".repo-memory")
-    materialized = materialize(git_repo, result, out_dir, ref=branch)
+
+    source = None
+    if not no_github:
+        from .github import GitHubSource
+        from .work import WORK_DIRNAME
+
+        # cache under the git-ignored work dir so it never lands in a commit
+        source = GitHubSource.detect(
+            repo, cache_dir=out_dir / WORK_DIRNAME / ".cache" / "github"
+        )
+
+    materialized = materialize(git_repo, result, out_dir, ref=branch, source=source)
     typer.secho(
         f"\nwrote {materialized.episode_count} episode bundle(s) to "
         f"{materialized.work_dir}",
         bold=True,
     )
     typer.echo(f"redacted {materialized.redactions} likely secret(s)")
+    if source is not None:
+        typer.echo(f"enriched with {materialized.enriched_prs} GitHub PR(s)")
+    elif not no_github:
+        typer.echo("no GitHub enrichment (no github remote, or gh not authed)")
     typer.echo("next: run the /repo-history skill in Claude Code, then `repo-history build`")
 
 

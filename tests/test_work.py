@@ -119,7 +119,7 @@ def _episode(sha: str) -> Episode:
 
 def test_bundle_has_untrusted_notice(fixture_repo: FixtureRepo) -> None:
     repo = fixture_repo.repo
-    bundle, _ = render_bundle(repo, _episode(repo.resolve("main")))
+    bundle, _, _ = render_bundle(repo, _episode(repo.resolve("main")))
     assert "untrusted" in bundle.lower()
 
 
@@ -127,7 +127,7 @@ def test_bundle_fence_outgrows_backticks_in_diff(tmp_path) -> None:
     # A diff whose content contains a ``` run must be wrapped in a longer fence,
     # so the injected backticks can't close the code block early.
     repo, sha = _one_commit_repo(tmp_path, "fence", "doc.md", "intro\n```\ncode\n```\n")
-    bundle, _ = render_bundle(repo, _episode(sha))
+    bundle, _, _ = render_bundle(repo, _episode(sha))
     assert "````diff" in bundle  # a 4-backtick fence, not the default 3
 
 
@@ -135,9 +135,58 @@ def test_render_bundle_scrubs_planted_secret(tmp_path) -> None:
     repo, sha = _one_commit_repo(
         tmp_path, "secret", ".env", 'API_KEY="supersecretvalue12345"\n'
     )
-    bundle, redactions = render_bundle(repo, _episode(sha))
+    bundle, redactions, _ = render_bundle(repo, _episode(sha))
     assert redactions >= 1
     assert "supersecretvalue12345" not in bundle
+
+
+class _FakeSource:
+    """Stands in for GitHubSource; returns canned PRs and records calls."""
+
+    def __init__(self, pulls):
+        self._pulls = pulls
+        self.calls: list[str] = []
+
+    def pulls_for_commit(self, sha):
+        self.calls.append(sha)
+        return self._pulls
+
+
+def test_bundle_enriched_with_pr_why(tmp_path) -> None:
+    from repo_history.github import Issue, PullRequest
+
+    repo, sha = _one_commit_repo(tmp_path, "enr", "a.py", "x = 1\n")
+    pr = PullRequest(
+        number=412,
+        title="Move sessions server-side",
+        body="JWT logout was impossible.",
+        issues=(Issue(number=400, title="Cannot force logout", body="Users stay in."),),
+        review_notes=("This breaks SSO.",),
+    )
+    bundle, _r, prs = render_bundle(repo, _episode(sha), _FakeSource([pr]))
+    assert prs == [412]
+    assert "Discussion (from PRs & issues)" in bundle
+    assert "PR #412" in bundle
+    assert "JWT logout was impossible." in bundle
+    assert "Closes #400" in bundle
+    assert "This breaks SSO." in bundle
+
+
+def test_bundle_enrichment_scrubs_pr_text(tmp_path) -> None:
+    from repo_history.github import PullRequest
+
+    repo, sha = _one_commit_repo(tmp_path, "enrsec", "a.py", "x = 1\n")
+    pr = PullRequest(number=1, title="t", body='set token = "supersecretvalue12345"')
+    bundle, redactions, _ = render_bundle(repo, _episode(sha), _FakeSource([pr]))
+    assert redactions >= 1
+    assert "supersecretvalue12345" not in bundle
+
+
+def test_bundle_without_source_has_no_discussion(fixture_repo: FixtureRepo) -> None:
+    repo = fixture_repo.repo
+    bundle, _r, prs = render_bundle(repo, _episode(repo.resolve("main")))
+    assert prs == []
+    assert "Discussion" not in bundle
 
 
 def test_check_episode_id_rejects_traversal() -> None:
